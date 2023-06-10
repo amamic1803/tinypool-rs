@@ -1,0 +1,15 @@
+[package]
+name = "tinypool"
+version = "0.1.0"
+authors = ["Antonio Mamić <antoniomamic007@gmail.com>"]
+edition = "2021"
+description = "A simple thread pool implementation in Rust"
+readme = "README.md"
+repository = "https://github.com/DarkLord76865/tinypool-rs"
+license = "MIT"
+keywords = ["thread", "pool", "threadpool"]
+categories = ["concurrency"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
