@@ -10,8 +10,8 @@ The aim of this crate is to provide a simple, easy-to-use thread pool that can b
 
 [**Crate**](https://crates.io/crates/tinypool "crates.io")
 
-**Example (1):**
-```
+### Example (1)
+```rust
 use tinypool::ThreadPool;
 use std::sync::{Arc, Mutex};
 
@@ -30,8 +30,8 @@ threadpool.join();
 assert_eq!(*counter.lock().unwrap(), 100);
 ```
 
-**Example (2):**
-```
+### Example (2)
+```rust
 use tinypool::ThreadPool;
 use std::sync::mpsc;
 
