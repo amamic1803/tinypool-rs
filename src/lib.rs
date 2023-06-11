@@ -1,4 +1,4 @@
-//! ***tinypool-rs*** is a simple thread pool implementation in Rust.
+//! ***tinypool*** is a simple thread pool implementation in Rust.
 //!
 //! A thread pool is a collection of threads that can be used to execute jobs concurrently.
 //! This crate is mostly based on the threadpool implementation from the Rust book, with some additional features.
