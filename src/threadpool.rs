@@ -1,7 +1,5 @@
-//! A thread pool that holds a number of threads and executes jobs on them.
+//! A module containing the thread pool implementation.
 
-//! tinypool-rs
-//! A simple thread pool implementation in Rust
 
 
 
@@ -12,7 +10,12 @@ use std::{
     error::Error,
     fmt::Display,
     io,
-    sync::{Arc, Condvar, mpsc, Mutex},
+    sync::{
+        Arc,
+        Condvar,
+        mpsc,
+        Mutex
+    },
     thread,
 };
 
@@ -86,6 +89,13 @@ impl ThreadPool {
     /// A ```Result``` containing the ```ThreadPool``` if successful, or a ```ThreadPoolError``` if unsuccessful.
     /// # Errors
     /// A ```ThreadPoolError::ThreadSpawn``` will be returned if the thread pool failed to spawn a thread.
+    /// # Examples
+    /// ```
+    /// use tinypool::ThreadPool;
+    ///
+    /// let threadpool = ThreadPool::new(4).unwrap();  // Create a thread pool with 4 threads
+    /// let threadpool2 = ThreadPool::new(0).unwrap();  // Create a thread pool with the number of threads determined automatically
+    /// ```
     pub fn new(size: usize) -> Result<Self, ThreadPoolError> {
         let workers = Vec::new();
 
@@ -115,6 +125,25 @@ impl ThreadPool {
     /// A ```Result``` containing ```()``` if successful, or a ```ThreadPoolError``` if unsuccessful.
     /// # Errors
     /// A ```ThreadPoolError::EmptyPool``` will be returned if the thread pool is empty.
+    /// # Examples
+    /// ```
+    /// use tinypool::ThreadPool;
+    /// use std::sync::{Arc, Mutex};
+    ///
+    /// let mut  threadpool = ThreadPool::new(4).unwrap();
+    /// let counter = Arc::new(Mutex::new(0));
+    ///
+    /// for _ in 0..100 {
+    ///     let counter_thrd = Arc::clone(&counter);
+    ///     threadpool.execute(move || {
+    ///         let mut counter = counter_thrd.lock().unwrap();
+    ///         *counter += 1;
+    ///     }).unwrap();
+    /// }
+    ///
+    /// threadpool.join();
+    /// assert_eq!(*counter.lock().unwrap(), 100);
+    /// ```
     pub fn execute<F>(&self, job: F) -> Result<(), ThreadPoolError>
     where
         F: FnOnce() + Send + 'static,
@@ -128,55 +157,79 @@ impl ThreadPool {
         }
     }
 
-    /// Get the number of queued jobs.
+    /// Get the number of queued (and running) jobs.
     /// # Returns
     /// The number of queued jobs.
-    pub fn queued_jobs(&self) -> usize {
+    /// # Examples
+    /// ```
+    /// use tinypool::ThreadPool;
+    /// use std::thread;
+    /// use std::time::Duration;
+    ///
+    /// let mut threadpool = ThreadPool::new(4).unwrap();
+    ///
+    /// for _ in 0..8 {
+    ///     threadpool.execute(|| { thread::sleep(Duration::from_secs(1)); }).unwrap();
+    /// }
+    ///
+    /// assert_eq!(threadpool.queued(), 8);  // 8 jobs (shouldn't have finished yet)
+    /// threadpool.join();
+    /// assert_eq!(threadpool.queued(), 0);  // 0 jobs (should have finished)
+    /// ```
+    pub fn queued(&self) -> usize {
         *self.queued_jobs.0.lock().unwrap()
-    }
-
-    /// Clear queued jobs. This will not affect jobs that are currently being executed.
-    pub fn clear_queue(&mut self) {
-        let lock = self.downstream_channel.1.lock().unwrap();
-        loop {
-            match lock.try_recv() {
-                Ok(msg) => {
-                    match msg {
-                        Message::Job(_) => {
-                            *self.queued_jobs.0.lock().unwrap() -= 1;
-                        },
-                        _ => panic!("Received unexpected message in downstream channel."),
-                    }
-                },
-                Err(err) => {
-                    match err {
-                        mpsc::TryRecvError::Disconnected => {
-                            panic!("Downstream channel disconnected.");
-                        },
-                        mpsc::TryRecvError::Empty => {
-                            break;
-                        },
-                    }
-                },
-            }
-        }
     }
 
     /// Get the number of threads in the thread pool.
     /// # Returns
     /// The number of worker threads.
+    /// # Examples
+    /// ```
+    /// use tinypool::ThreadPool;
+    ///
+    /// let threadpool = ThreadPool::new(4).unwrap();
+    /// assert_eq!(threadpool.size(), 4);
+    ///
+    /// let threadpool2 = ThreadPool::new(0).unwrap();
+    /// assert_ne!(threadpool2.size(), 0);
+    /// ```
     pub fn size(&self) -> usize {
         self.workers.len()
     }
 
     /// Set the number of threads in the thread pool.
     /// If you want to close all threads, use ```ThreadPool::join()``` instead.
+    /// If reducing the number of threads, this method will close threads only after more jobs aren't available.
     /// # Arguments
     /// * `size` - The number of threads to set the thread pool to. Use `0` to determine the number of threads automatically.
     /// # Returns
     /// A ```Result``` containing ```()``` if successful, or a ```ThreadPoolError``` if unsuccessful.
     /// # Errors
     /// A ```ThreadPoolError::ThreadSpawn``` will be returned if the thread pool failed to spawn a thread.
+    /// # Examples
+    /// ```
+    /// use tinypool::ThreadPool;
+    /// use std::thread;
+    /// use std::time::Duration;
+    ///
+    /// let mut threadpool = ThreadPool::new(4).unwrap();
+    /// assert_eq!(threadpool.size(), 4);
+    ///
+    /// for _ in 0..8 {
+    ///    threadpool.execute(|| { thread::sleep(Duration::from_secs(1)); }).unwrap();
+    /// }
+    /// assert_eq!(threadpool.queued(), 8);
+    ///
+    /// threadpool.set_size(8).unwrap();
+    /// assert_eq!(threadpool.size(), 8);
+    /// assert_eq!(threadpool.queued(), 8);  // increasing thread pool size doesn't block main thread
+    ///
+    /// threadpool.set_size(2).unwrap();
+    /// assert_eq!(threadpool.size(), 2);
+    /// assert!(threadpool.queued() <= 2);  // decreasing thread pool size blocks main thread until all jobs are finished
+    ///
+    /// threadpool.join();
+    /// ```
     pub fn set_size(&mut self, size: usize) -> Result<(), ThreadPoolError> {
         let size: usize =
             if size == 0 {
@@ -204,22 +257,9 @@ impl ThreadPool {
                 );
             }
         } else {
-            let lock = self.downstream_channel.1.lock().unwrap();
-            for _ in size..(current_size + 1) {
+            for _ in size..current_size {
                 self.downstream_channel.0.send(Message::Terminate).unwrap()
             }
-            loop {
-                match lock.recv().unwrap() {
-                    Message::Job(job) => {
-                        self.downstream_channel.0.send(Message::Job(job)).unwrap();
-                    },
-                    Message::Terminate => {
-                        break;
-                    },
-                    _ => panic!("Received unexpected message in downstream channel."),
-                }
-            }
-            drop(lock);
             let mut reduce = current_size - size;
             while reduce != 0 {
                 match self.upstream_channel.1.recv().unwrap() {
@@ -240,6 +280,22 @@ impl ThreadPool {
     /// This method will block until all queued jobs have finished.
     /// It will then close all threads in the thread pool.
     /// If you want to wait for all queued jobs to finish, but want to keep the threads running, use ```ThreadPool::wait()``` instead.
+    /// # Examples
+    /// ```
+    /// use tinypool::ThreadPool;
+    /// use std::thread;
+    /// use std::time::Duration;
+    ///
+    /// let mut threadpool = ThreadPool::new(4).unwrap();
+    /// assert_eq!(threadpool.size(), 4);
+    /// assert_eq!(threadpool.queued(), 0);
+    /// for _ in 0..8 {
+    ///    threadpool.execute(|| { thread::sleep(Duration::from_secs(1)); }).unwrap();
+    /// }
+    /// threadpool.join();
+    /// assert_eq!(threadpool.size(), 0);
+    /// assert_eq!(threadpool.queued(), 0);
+    /// ```
     pub fn join(&mut self) {
         for _ in &self.workers {
             self.downstream_channel.0.send(Message::Terminate).unwrap();
@@ -253,53 +309,34 @@ impl ThreadPool {
     /// Wait for all queued jobs to finish.
     /// This method will block until all queued jobs have finished.
     /// If you want to wait for all queued jobs to finish and close all threads, use ```ThreadPool::join()``` instead.
+    /// # Examples
+    /// ```
+    /// use tinypool::ThreadPool;
+    /// use std::thread;
+    /// use std::time::Duration;
+    ///
+    /// let mut threadpool = ThreadPool::new(4).unwrap();
+    /// assert_eq!(threadpool.size(), 4);
+    /// assert_eq!(threadpool.queued(), 0);
+    /// for _ in 0..8 {
+    ///   threadpool.execute(|| { thread::sleep(Duration::from_secs(1)); }).unwrap();
+    /// }
+    /// threadpool.wait();
+    /// assert_eq!(threadpool.size(), 4);
+    /// assert_eq!(threadpool.queued(), 0);
+    /// ```
     pub fn wait(&self) {
         let mut queued_jobs = self.queued_jobs.0.lock().unwrap();
         while *queued_jobs > 0 {
             queued_jobs = self.queued_jobs.1.wait(queued_jobs).unwrap();
         }
     }
-
-    /// Close all threads in the thread pool, wait only for currently running jobs to finish.
-    /// This method will block until all currently running jobs have finished.
-    /// It will then close all threads in the thread pool.
-    /// If you want to wait for all queued jobs to finish and close all threads, use ```ThreadPool::join()``` instead.
-    pub fn close(&mut self) {
-        let lock = self.downstream_channel.1.lock().unwrap();
-        loop {
-            match lock.try_recv() {
-                Ok(msg) => {
-                    match msg {
-                        Message::Job(_) => {
-                            *self.queued_jobs.0.lock().unwrap() -= 1;
-                        },
-                        _ => panic!("Received unexpected message in downstream channel."),
-                    }
-                },
-                Err(err) => {
-                    match err {
-                        mpsc::TryRecvError::Disconnected => {
-                            panic!("Downstream channel disconnected.");
-                        },
-                        mpsc::TryRecvError::Empty => {
-                            break;
-                        },
-                    }
-                },
-            }
-        }
-        for _ in 0..self.size() {
-            self.downstream_channel.0.send(Message::Terminate).unwrap();
-        }
-        drop(lock);
-        for worker in &mut self.workers.drain(..) {
-            worker.thread.join().unwrap();
-        }
-        self.workers.shrink_to_fit();
-    }
 }
 
 impl Drop for ThreadPool {
+    /// Drop the thread pool.
+    /// This will wait for all queued jobs to finish and close all threads.
+    /// Equivalent to ```ThreadPool::join()```.
     fn drop(&mut self) {
         self.join();
     }
@@ -327,7 +364,8 @@ impl Worker {
     fn new(id: usize, downstream_receiver: Arc<Mutex<mpsc::Receiver<Message>>>, upstream_sender:mpsc::Sender<Message>, queued_jobs: Arc<(Mutex<usize>, Condvar)>) -> Result<Self, ThreadPoolError> {
         let thread = thread::Builder::new()
             .spawn(move || loop {
-                match downstream_receiver.lock().unwrap().recv().unwrap() {
+                let message = downstream_receiver.lock().unwrap().recv().unwrap();
+                match message {
                     Message::Job(job) => {
                         job();
                         *queued_jobs.0.lock().unwrap() -= 1;
@@ -353,10 +391,99 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
     use super::*;
 
     #[test]
-    fn test_new() {
-        assert!(true);
+    fn new() {
+        let pool = ThreadPool::new(4).unwrap();
+
+        assert_eq!(pool.size(), 4);
+        assert_eq!(pool.queued(), 0);
+
+        pool.wait();
+        assert_eq!(pool.queued(), 0);
+    }
+
+    #[test]
+    fn size() {
+        let mut pool = ThreadPool::new(4).unwrap();
+        assert_eq!(pool.size(), 4);
+
+        pool.set_size(8).unwrap();
+        assert_eq!(pool.size(), 8);
+
+        pool.set_size(2).unwrap();
+        assert_eq!(pool.size(), 2);
+
+        pool.set_size(0).unwrap();
+        assert_eq!(pool.size(), thread::available_parallelism().unwrap().get());
+    }
+
+    #[test]
+    fn queue() {
+        let pool = ThreadPool::new(4).unwrap();
+        assert_eq!(pool.queued(), 0);
+
+        for _ in 0..8 {
+            pool.execute(|| {
+                thread::sleep(Duration::from_millis(100));
+            }).unwrap();
+        }
+        assert_eq!(pool.queued(), 8);  // none of the jobs have finished yet (sleeping for 100ms)
+    }
+
+    #[test]
+    fn size_and_queue() {
+        let mut pool = ThreadPool::new(4).unwrap();
+        assert_eq!(pool.size(), 4);
+        assert_eq!(pool.queued(), 0);
+
+        for _ in 0..100 {
+            pool.execute(|| {
+                thread::sleep(Duration::from_millis(100));
+            }).unwrap();
+        }
+        assert_eq!(pool.queued(), 100);  // none of the jobs have finished yet (sleeping for 100ms)
+
+        pool.set_size(8).unwrap();
+        assert_eq!(pool.size(), 8);
+        assert_ne!(pool.queued(), 0);  // increasing pool size does not affect queued jobs
+
+        pool.set_size(2).unwrap();
+        assert_eq!(pool.size(), 2);
+        assert!(pool.queued() <= 2);  // decreasing pool size requires all queued jobs to have finished
+    }
+
+    #[test]
+    fn join() {
+        let mut pool = ThreadPool::new(4).unwrap();
+        assert_eq!(pool.size(), 4);
+
+        for _ in 0..40 {
+            pool.execute(|| {
+                thread::sleep(Duration::from_millis(100));
+            }).unwrap();
+        }
+
+        pool.join();
+        assert_eq!(pool.queued(), 0);  // all jobs have finished
+        assert_eq!(pool.size(), 0);  // all threads have been closed
+    }
+
+    #[test]
+    fn wait() {
+        let pool = ThreadPool::new(4).unwrap();
+        assert_eq!(pool.size(), 4);
+
+        for _ in 0..40 {
+            pool.execute(|| {
+                thread::sleep(Duration::from_millis(100));
+            }).unwrap();
+        }
+
+        pool.wait();
+        assert_eq!(pool.queued(), 0);  // all jobs have finished
+        assert_eq!(pool.size(), 4);  // all threads are still running
     }
 }
