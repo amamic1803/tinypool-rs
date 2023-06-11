@@ -9,6 +9,13 @@ repository = "https://github.com/DarkLord76865/tinypool-rs"
 license = "MIT"
 keywords = ["thread", "pool", "threadpool"]
 categories = ["concurrency"]
+include = [
+    "/src",
+    "/tests",
+    "Cargo.toml",
+    "LICENSE.md",
+    "README.md"
+]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
