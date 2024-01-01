@@ -145,7 +145,7 @@ fn collatz_10_000_000_channel() {
     let pool = ThreadPool::new(None).unwrap();
     let (tx, rx) = mpsc::channel();
 
-    for i in 1..10000001 {
+    for i in 1..10_000_001 {
         let tx = tx.clone();
         pool.add_to_queue(move || {
             let result = collatz_conjecture(i);
