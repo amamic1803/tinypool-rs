@@ -1,6 +1,6 @@
 [package]
 name = "tinypool"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Antonio Mamić <antoniomamic007@gmail.com>"]
 edition = "2024"
 description = "A simple thread pool implementation in Rust"
@@ -12,3 +12,5 @@ categories = ["concurrency"]
 
 [dependencies]
 crossbeam-channel = "0.5.17"
+oneshot = { version = "0.2.1", features = ["async", "std"] }
+thiserror = "2.0.21"
