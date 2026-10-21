@@ -1,15 +1,15 @@
 //! A thread pool implementation.
 
-use std::fmt::Debug;
-use std::{io, panic};
+use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 use std::any::Any;
+use std::fmt::Debug;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 use std::thread;
-use crossbeam_channel::{bounded, Receiver, Sender, unbounded};
+use std::{io, panic};
 use thiserror::Error;
 
 /// A message between the thread pool and the worker threads.
@@ -102,10 +102,12 @@ impl ThreadPool {
         T: Send + 'static,
     {
         let (tx, rx) = oneshot::channel();
-        self.queue_tx.send(Message::Job(Box::new(move || {
-            let result = panic::catch_unwind(AssertUnwindSafe(job));
-            let _ = tx.send(result);  // ignores errors if the receiver was dropped
-        }))).unwrap();
+        self.queue_tx
+            .send(Message::Job(Box::new(move || {
+                let result = panic::catch_unwind(AssertUnwindSafe(job));
+                let _ = tx.send(result); // ignores errors if the receiver was dropped
+            })))
+            .unwrap();
         JoinHandle { rx }
     }
 
@@ -123,9 +125,11 @@ impl ThreadPool {
         let (tx, rx) = oneshot::channel();
         let job = move || {
             let result = panic::catch_unwind(AssertUnwindSafe(job));
-            let _ = tx.send(result);  // ignores errors if the receiver was dropped
+            let _ = tx.send(result); // ignores errors if the receiver was dropped
         };
-        self.queue_tx.try_send(Message::Job(Box::new(job))).map_err(|_| TryError)?;
+        self.queue_tx
+            .try_send(Message::Job(Box::new(job)))
+            .map_err(|_| TryError)?;
         Ok(JoinHandle { rx })
     }
 
@@ -156,7 +160,9 @@ impl ThreadPool {
         let job = move || {
             let _ = panic::catch_unwind(AssertUnwindSafe(job));
         };
-        self.queue_tx.try_send(Message::Job(Box::new(job))).map_err(|_| TryError)
+        self.queue_tx
+            .try_send(Message::Job(Box::new(job)))
+            .map_err(|_| TryError)
     }
 
     /// Clears the work queue.
@@ -174,7 +180,9 @@ impl ThreadPool {
     /// so this usually doesn't need to be called explicitly. For waiting
     /// for all queued jobs to finish without closing the thread pool,
     /// use [wait](ThreadPool::wait) instead.
-    pub fn join(self) { drop(self) }
+    pub fn join(self) {
+        drop(self)
+    }
 
     /// Wait for all queued jobs to finish.
     ///
@@ -285,7 +293,13 @@ impl Builder {
             )?);
         }
 
-        Ok(ThreadPool { workers, queue_tx, queue_rx, info_down_tx, info_up_rx })
+        Ok(ThreadPool {
+            workers,
+            queue_tx,
+            queue_rx,
+            info_down_tx,
+            info_up_rx,
+        })
     }
 }
 impl Default for Builder {
@@ -338,7 +352,9 @@ impl<T> IntoFuture for JoinHandle<T> {
     type IntoFuture = JoinFuture<T>;
 
     fn into_future(self) -> JoinFuture<T> {
-        JoinFuture { rx: self.rx.into_future() }
+        JoinFuture {
+            rx: self.rx.into_future(),
+        }
     }
 }
 
@@ -391,28 +407,36 @@ impl Worker {
     ) -> Result<Self, io::Error> {
         let active = Arc::new(AtomicBool::new(false));
         let active_clone = Arc::clone(&active);
-        let thread = thread::Builder::new().name(format!("worker-{id}")).spawn(move || {
-            loop {
-                match queue_rx.recv().unwrap() {
-                    Message::Job(job) => {
-                        active.store(true, Ordering::Relaxed);
-                        job();
-                        active.store(false, Ordering::Relaxed);
-                    }
-                    Message::Terminate => break,
-                    Message::Wait => {
-                        info_up_tx.send(Message::Waiting).unwrap();
-                        match info_down_rx.recv().unwrap() {
-                            Message::Continue => {}
-                            _ => panic!("received unexpected message from the thread pool manager"),
+        let thread = thread::Builder::new()
+            .name(format!("worker-{id}"))
+            .spawn(move || {
+                loop {
+                    match queue_rx.recv().unwrap() {
+                        Message::Job(job) => {
+                            active.store(true, Ordering::Relaxed);
+                            job();
+                            active.store(false, Ordering::Relaxed);
                         }
+                        Message::Terminate => break,
+                        Message::Wait => {
+                            info_up_tx.send(Message::Waiting).unwrap();
+                            match info_down_rx.recv().unwrap() {
+                                Message::Continue => {}
+                                _ => panic!(
+                                    "received unexpected message from the thread pool manager"
+                                ),
+                            }
+                        }
+                        _ => panic!("received unexpected message from the thread pool manager"),
                     }
-                    _ => panic!("received unexpected message from the thread pool manager"),
                 }
-            }
-        })?;
+            })?;
 
-        Ok(Self { id, thread, active: active_clone })
+        Ok(Self {
+            id,
+            thread,
+            active: active_clone,
+        })
     }
 
     /// Returns whether the worker is currently executing a job.
