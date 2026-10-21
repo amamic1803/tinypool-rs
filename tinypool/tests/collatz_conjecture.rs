@@ -1,15 +1,13 @@
-use tinypool::ThreadPool;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-
-
+use tinypool::ThreadPool;
 
 /// Returns the number of steps and the maximum number reached for the Collatz conjecture
 fn collatz_conjecture(mut n: u64) -> (u64, u64) {
     let mut count = 0;
     let mut max = n;
     while n != 1 {
-        if n % 2 == 0 {
+        if n.is_multiple_of(2) {
             n /= 2;
         } else {
             n = 3 * n + 1;
@@ -21,8 +19,6 @@ fn collatz_conjecture(mut n: u64) -> (u64, u64) {
     }
     (count, max)
 }
-
-
 
 #[test]
 fn collatz_1000_channel() {
@@ -212,7 +208,8 @@ fn collatz_1000_mutex() {
 #[test]
 fn collatz_10_000_mutex() {
     let pool = ThreadPool::new(None).unwrap();
-    let results: Arc<Mutex<Vec<(u64, u64, u64)>>> = Arc::new(Mutex::new(Vec::with_capacity(10_000)));
+    let results: Arc<Mutex<Vec<(u64, u64, u64)>>> =
+        Arc::new(Mutex::new(Vec::with_capacity(10_000)));
 
     let per_thread = 10_000 / pool.size();
 
@@ -252,7 +249,8 @@ fn collatz_10_000_mutex() {
 #[test]
 fn collatz_100_000_mutex() {
     let pool = ThreadPool::new(None).unwrap();
-    let results: Arc<Mutex<Vec<(u64, u64, u64)>>> = Arc::new(Mutex::new(Vec::with_capacity(100_000)));
+    let results: Arc<Mutex<Vec<(u64, u64, u64)>>> =
+        Arc::new(Mutex::new(Vec::with_capacity(100_000)));
 
     let per_thread = 100_000 / pool.size();
 
@@ -292,7 +290,8 @@ fn collatz_100_000_mutex() {
 #[test]
 fn collatz_1_000_000_mutex() {
     let pool = ThreadPool::new(None).unwrap();
-    let results: Arc<Mutex<Vec<(u64, u64, u64)>>> = Arc::new(Mutex::new(Vec::with_capacity(1000000)));
+    let results: Arc<Mutex<Vec<(u64, u64, u64)>>> =
+        Arc::new(Mutex::new(Vec::with_capacity(1000000)));
 
     let per_thread = 1_000_000 / pool.size();
 
@@ -332,7 +331,8 @@ fn collatz_1_000_000_mutex() {
 #[test]
 fn collatz_10_000_000_mutex() {
     let pool = ThreadPool::new(None).unwrap();
-    let results: Arc<Mutex<Vec<(u64, u64, u64)>>> = Arc::new(Mutex::new(Vec::with_capacity(10000000)));
+    let results: Arc<Mutex<Vec<(u64, u64, u64)>>> =
+        Arc::new(Mutex::new(Vec::with_capacity(10000000)));
 
     let per_thread = 10_000_000 / pool.size();
 

@@ -1,0 +1,14 @@
+[package]
+name = "tinypool"
+version = "0.2.0"
+authors = ["Antonio Mamić <antoniomamic007@gmail.com>"]
+edition = "2024"
+description = "A simple thread pool implementation in Rust"
+readme = "README.md"
+repository = "https://github.com/amamic1803/tinypool-rs"
+license = "MIT"
+keywords = ["thread", "pool", "threadpool"]
+categories = ["concurrency"]
+
+[dependencies]
+crossbeam-channel = "0.5.17"

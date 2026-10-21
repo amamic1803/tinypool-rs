@@ -47,10 +47,6 @@
 //!
 //! **Note:** The ```ThreadPool::join()``` method is automatically called when the thread pool is dropped.
 
-
-
-
-
 pub mod threadpool;
 
 #[doc(inline)]

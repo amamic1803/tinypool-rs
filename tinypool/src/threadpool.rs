@@ -1,20 +1,12 @@
 //! A module containing the thread pool implementation.
 
-
-
-
-
 // IMPORTS
 
 use std::cmp::Ordering;
 use std::io;
-use std::sync::{Arc, mpsc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-
-
-
-
 
 // ENUMS
 
@@ -31,10 +23,6 @@ enum Message {
     /// Continue executing jobs. (unpause)
     Continue,
 }
-
-
-
-
 
 // STRUCTS
 
@@ -218,14 +206,14 @@ impl ThreadPool {
                     match self.worker_info_up_rx.recv().unwrap() {
                         Message::Closing(id) => {
                             self.workers.retain(|worker| worker.id != id);
-                        },
+                        }
                         _ => panic!("Received unexpected message from worker thread."),
                     }
                 }
 
                 self.workers.shrink_to_fit();
-            },
-            Ordering::Equal => {},
+            }
+            Ordering::Equal => {}
             Ordering::Greater => {
                 let additional_size = new_size - current_size;
                 self.workers.reserve_exact(additional_size);
@@ -235,17 +223,15 @@ impl ThreadPool {
                     while self.workers.iter().any(|worker| worker.id == id) {
                         id += 1;
                     }
-                    self.workers.push(
-                        Worker::new(
-                            id,
-                            self.worker_info_up_tx.clone(),
-                            Arc::clone(&self.worker_info_down_rx),
-                            Arc::clone(&self.queue_rx),
-                            Arc::clone(&self.queued_jobs),
-                        )?
-                    );
+                    self.workers.push(Worker::new(
+                        id,
+                        self.worker_info_up_tx.clone(),
+                        Arc::clone(&self.worker_info_down_rx),
+                        Arc::clone(&self.queue_rx),
+                        Arc::clone(&self.queued_jobs),
+                    )?);
                 }
-            },
+            }
         }
 
         Ok(())
@@ -282,7 +268,7 @@ impl ThreadPool {
         self.workers.shrink_to_fit();
         for _ in 0..num_of_workers {
             match self.worker_info_up_rx.recv().unwrap() {
-                Message::Closing(_) => {},
+                Message::Closing(_) => {}
                 _ => panic!("Received unexpected message from worker thread."),
             }
         }
@@ -324,7 +310,7 @@ impl ThreadPool {
 
         for _ in 0..pool_size {
             match self.worker_info_up_rx.recv().unwrap() {
-                Message::EmptyQueue => {},
+                Message::EmptyQueue => {}
                 _ => panic!("Received unexpected message from worker thread."),
             }
         }
@@ -361,39 +347,40 @@ impl Worker {
     /// * `queued_jobs` - The number of jobs in the queue.
     /// # Returns
     /// A ```Result``` containing the ```Worker``` if successful, or an ```io::Error``` if unsuccessful.
-    fn new(id: usize, worker_info_up_tx: mpsc::Sender<Message>, worker_info_down_rx: Arc<Mutex<mpsc::Receiver<Message>>>, queue_rx: Arc<Mutex<mpsc::Receiver<Message>>>, queued_jobs: Arc<AtomicUsize>) -> Result<Self, io::Error> {
-        let thread = thread::Builder::new()
-            .spawn(move || {
-                loop {
-                    let msg = queue_rx.lock().unwrap().recv().unwrap();
-                    match msg {
-                        Message::Job(job) => {
-                            job();
-                            queued_jobs.fetch_sub(1, AtomicOrdering::Release);
-                        },
-                        Message::Terminate => {
-                            worker_info_up_tx.send(Message::Closing(id)).unwrap();
-                            break;
-                        },
-                        Message::EmptyQueue => {
-                            worker_info_up_tx.send(Message::EmptyQueue).unwrap();
-                            match worker_info_down_rx.lock().unwrap().recv().unwrap() {
-                                Message::Continue => {},
-                                _ => panic!("Received unexpected message from thread pool."),
-                            }
-                        },
-                        _ => panic!("Received unexpected message from thread pool."),
+    fn new(
+        id: usize,
+        worker_info_up_tx: mpsc::Sender<Message>,
+        worker_info_down_rx: Arc<Mutex<mpsc::Receiver<Message>>>,
+        queue_rx: Arc<Mutex<mpsc::Receiver<Message>>>,
+        queued_jobs: Arc<AtomicUsize>,
+    ) -> Result<Self, io::Error> {
+        let thread = thread::Builder::new().spawn(move || {
+            loop {
+                let msg = queue_rx.lock().unwrap().recv().unwrap();
+                match msg {
+                    Message::Job(job) => {
+                        job();
+                        queued_jobs.fetch_sub(1, AtomicOrdering::Release);
                     }
+                    Message::Terminate => {
+                        worker_info_up_tx.send(Message::Closing(id)).unwrap();
+                        break;
+                    }
+                    Message::EmptyQueue => {
+                        worker_info_up_tx.send(Message::EmptyQueue).unwrap();
+                        match worker_info_down_rx.lock().unwrap().recv().unwrap() {
+                            Message::Continue => {}
+                            _ => panic!("Received unexpected message from thread pool."),
+                        }
+                    }
+                    _ => panic!("Received unexpected message from thread pool."),
                 }
-            })?;
+            }
+        })?;
 
         Ok(Self { id, thread })
     }
 }
-
-
-
-
 
 // TESTS
 
@@ -432,7 +419,9 @@ mod tests {
         assert_eq!(pool.queued_jobs(), 0);
 
         for i in 0..8 {
-            pool.add_to_queue(move || { println!("{i}"); });
+            pool.add_to_queue(move || {
+                println!("{i}");
+            });
         }
 
         assert_eq!(pool.queued_jobs(), 8);
@@ -444,12 +433,14 @@ mod tests {
         assert_eq!(pool.size(), 4);
 
         for i in 0..1000 {
-            pool.add_to_queue(move || { println!("{i}"); });
+            pool.add_to_queue(move || {
+                println!("{i}");
+            });
         }
 
         pool.join();
-        assert_eq!(pool.queued_jobs(), 0);  // all jobs have finished
-        assert_eq!(pool.size(), 0);  // all threads have been closed
+        assert_eq!(pool.queued_jobs(), 0); // all jobs have finished
+        assert_eq!(pool.size(), 0); // all threads have been closed
     }
 
     #[test]
@@ -458,13 +449,15 @@ mod tests {
         assert_eq!(pool.size(), 4);
 
         for i in 0..1000 {
-            pool.add_to_queue(move || { println!("{i}"); });
+            pool.add_to_queue(move || {
+                println!("{i}");
+            });
         }
 
         pool.wait();
         std::thread::sleep(std::time::Duration::from_millis(100));
-        assert_eq!(pool.queued_jobs(), 0);  // all jobs have finished
-        assert_eq!(pool.size(), 4);  // all threads are still running
+        assert_eq!(pool.queued_jobs(), 0); // all jobs have finished
+        assert_eq!(pool.size(), 4); // all threads are still running
     }
 
     #[test]
@@ -473,14 +466,18 @@ mod tests {
         assert_eq!(pool.size(), 4);
 
         for i in 0..1000 {
-            pool.add_to_queue(move || { println!("{i}"); });
+            pool.add_to_queue(move || {
+                println!("{i}");
+            });
         }
 
         pool.set_size(Some(8)).unwrap();
         assert_eq!(pool.size(), 8);
 
         for i in 0..1000 {
-            pool.add_to_queue(move || { println!("{i}"); });
+            pool.add_to_queue(move || {
+                println!("{i}");
+            });
         }
 
         pool.wait();
@@ -490,21 +487,25 @@ mod tests {
         assert_eq!(pool.size(), 2);
 
         for i in 0..1000 {
-            pool.add_to_queue(move || { println!("{i}"); });
+            pool.add_to_queue(move || {
+                println!("{i}");
+            });
         }
 
         pool.set_size(Some(0)).unwrap();
         assert_eq!(pool.size(), 0);
 
         for i in 0..1000 {
-            pool.add_to_queue(move || { println!("{i}"); });
+            pool.add_to_queue(move || {
+                println!("{i}");
+            });
         }
 
         pool.set_size(None).unwrap();
         assert_eq!(pool.size(), thread::available_parallelism().unwrap().get());
 
         pool.join();
-        assert_eq!(pool.queued_jobs(), 0);  // all jobs have finished
-        assert_eq!(pool.size(), 0);  // all threads have been closed
+        assert_eq!(pool.queued_jobs(), 0); // all jobs have finished
+        assert_eq!(pool.size(), 0); // all threads have been closed
     }
 }
