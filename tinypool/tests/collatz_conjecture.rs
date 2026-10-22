@@ -103,7 +103,10 @@ fn collatz_join(n: u64, max_index: u64, max_steps: u64, max_number: u64) {
             (i, result.0, result.1)
         }));
     }
-    let mut results = results.into_iter().map(|r| r.join().unwrap()).collect::<Vec<_>>();
+    let mut results = results
+        .into_iter()
+        .map(|r| r.join().unwrap())
+        .collect::<Vec<_>>();
 
     results.sort_unstable_by_key(|&(i, _, _)| i);
     assert_eq!(results.len(), n as usize);
